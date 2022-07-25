@@ -1,4 +1,5 @@
 #include <iostream>
+#include <ctime>
 #include <thread>
 #include <mutex>
 using namespace std;
@@ -12,13 +13,20 @@ const double distanceMax = 100.0;
 // swimmer data
 const int N = 6;  // number of swimmers
 struct Swimmer {
-    string name;                 // name
-    double speed = 0.0;          // speed
-    double distance = 0.0;       // distance traveled
-    double finalSwimTime = 0.0;  // final swim time
-    thread* track = nullptr;     // thread object
+    string name;                  // name
+    double speed = 0.0;           // speed, meters/second
+    int startSwimTime = 0;        // start swim time, millisecond
+    int finalSwimTime = 0;        // final swim time, millisecond
+    double resultSwimTime = 0.0;  // result swim time, second
+    thread* track = nullptr;      // thread object
 } swimmer[N];  // swimmer data array
 mutex swimmer_access;
+
+// condition variable: message output queue to the console
+bool fOut;
+mutex fOut_access;
+
+
 
 
 /*!
@@ -27,23 +35,38 @@ mutex swimmer_access;
  */
 void track(int ID) {
     // data
-    double time = 0.0;      // time counter
-    double distance = 0.0;  // distance traveled
-
-    while( distance < 100.0 ) {
-        // pause
-        this_thread::sleep_for(chrono::seconds(1));
-        time += 1;
-
-        // calculating the distance and storing the result in an array
-        swimmer_access.lock();
-        swimmer[ID].distance = (distance = swimmer[ID].speed * time);
-        swimmer_access.unlock();
-    }
-
-    // calculation of the final time of the swim
     swimmer_access.lock();
-    swimmer[ID].finalSwimTime = distanceMax / swimmer[ID].speed;
+    int startTime = (swimmer[ID].startSwimTime = clock());  // засекание времени начало работы потока
+    string name = swimmer[ID].name;
+    double speed = swimmer[ID].speed;
+    swimmer_access.unlock();
+    int t;
+    bool fFinish;
+
+    do{
+        // pause
+        this_thread::sleep_for(chrono::milliseconds(64));
+
+        // calculating the distance
+        int clock_time = clock();
+        double distance = speed * (clock_time-startTime)/1000.0;
+        fFinish = distance >= distanceMax;
+
+        // information output
+        if( fFinish || (clock_time >= t) ) {
+            //
+            t = clock_time + 1000;
+
+            fOut_access.lock();
+            cout << "Swimmer " << name << " swam " << distance << " meters. "
+                 << (fFinish ? "(FINISH!!!)" : "") << endl;
+            fOut_access.unlock();
+        }
+    }while( !fFinish );
+
+    // засекание времени завершения работы потока
+    swimmer_access.lock();
+    swimmer[ID].finalSwimTime = clock();
     swimmer_access.unlock();
 }
 
@@ -56,62 +79,37 @@ int main() {
         cin >> s.name;
         cout << "Enter speed:";
         cin >> s.speed;
-
-        s.distance = 0.0;
     }
 
     // start
     cout << "\nStart all!\n";
-    for(int i=0; i<N; i++) {
-        swimmer[i].track = new thread(track, i);
-    }
+    for(int ID=0; ID<N; ID++)
+        swimmer[ID].track = new thread(track, ID);
 
-    // output of the current distance covered by swimmers
-    bool finishAll = false;  // no one finished as they had just started.
-    int time = 0;
-    while( !finishAll ) {
-        // pause
-        this_thread::sleep_for(chrono::seconds(1));
-        cout << "\nTime: " << ++time << endl;
-
-        // output loop
-        finishAll = true;  // let's say everyone finished
-        swimmer_access.lock();
-        for(const auto &s: swimmer) {
-            // data
-            bool finish;
-            // distance analysis
-            finishAll &= (finish = (s.distance >= distanceMax));
-            // information output
-            cout << "Swimmer " << s.name << " swam " << s.distance << " meters. " <<(finish?"(FINISH!!!)":"") << endl;
-        }
-        swimmer_access.unlock();
-    }
-
-    // finish
+    // ждём, когда все финишируют
     for( auto &s: swimmer )
-        if( s.track->joinable() )
-            s.track->join();
+        s.track->join();
 
-    // program termination output
+    // вывод о завершении работы всех потоков
     cout << "\nFinish all!\n";
 
-    swimmer_access.lock();
+    // вычисление итогового времени заплыва
+    for( auto &s: swimmer )
+        s.resultSwimTime = (s.finalSwimTime - s.startSwimTime) / 1000.0;
 
     // sorting the result
     for(int i=0; i<(N-1); i++)
         for(int j=(i+1); j<N; j++)
-            if( swimmer[i].finalSwimTime > swimmer[j].finalSwimTime )
+            if( swimmer[i].resultSwimTime > swimmer[j].resultSwimTime )
                 swap(swimmer[i], swimmer[j]);
 
     // conclusion of the final result
-    cout << "\nFinal result:\n";
+    cout << "\nFinal result, seconds:\n";
     for(const auto &s: swimmer)
-        cout << s.name << " - " << s.finalSwimTime << endl;
+        cout << s.name << " - " << s.resultSwimTime << endl;
     cout
         << "-------------------------------------------------------\n"
         << "End of table.\n";
 
-    swimmer_access.unlock();
     return 0;
 }
