@@ -36,7 +36,7 @@ mutex fOut_access;
 void track(int ID) {
     // data
     swimmer_access.lock();
-    int startTime = (swimmer[ID].startSwimTime = clock());  // засекание времени начало работы потока
+    int startTime = (swimmer[ID].startSwimTime = clock());  // timing the start of the thread
     string name = swimmer[ID].name;
     double speed = swimmer[ID].speed;
     swimmer_access.unlock();
@@ -64,7 +64,7 @@ void track(int ID) {
         }
     }while( !fFinish );
 
-    // засекание времени завершения работы потока
+    // timing the completion of a thread
     swimmer_access.lock();
     swimmer[ID].finalSwimTime = clock();
     swimmer_access.unlock();
@@ -86,14 +86,14 @@ int main() {
     for(int ID=0; ID<N; ID++)
         swimmer[ID].track = new thread(track, ID);
 
-    // ждём, когда все финишируют
+    // waiting for everyone to finish
     for( auto &s: swimmer )
         s.track->join();
 
-    // вывод о завершении работы всех потоков
+    // conclusion about the termination of all threads
     cout << "\nFinish all!\n";
 
-    // вычисление итогового времени заплыва
+    // calculation of the final swim time
     for( auto &s: swimmer )
         s.resultSwimTime = (s.finalSwimTime - s.startSwimTime) / 1000.0;
 
